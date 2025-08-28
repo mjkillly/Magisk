@@ -5,9 +5,6 @@ on:
   push:
     branches: [ main, master ]
 
-env:
-  NDK_VERSION: r26b
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -53,13 +50,6 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y git curl wget zip unzip python3 python3-pip build-essential libssl-dev zlib1g-dev
 
-    - name: Download and setup Android NDK
-      run: |
-        wget https://dl.google.com/android/repository/android-ndk-${{ env.NDK_VERSION }}-linux.zip
-        unzip android-ndk-${{ env.NDK_VERSION }}-linux.zip -d /home/runner/
-        echo "NDK_HOME=/home/runner/android-ndk-${{ env.NDK_VERSION }}" >> $GITHUB_ENV
-        echo "NDK=/home/runner/android-ndk-${{ env.NDK_VERSION }}" >> $GITHUB_ENV
-
     - name: Set up Rust
       run: |
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
@@ -67,13 +57,19 @@ jobs:
         source $HOME/.cargo/env
         rustc --version
 
-    - name: Build Magisk native binaries
-      run: |  # 修改这里：使用 'native' 而不是 'binary'
+    - name: Setup NDK using Magisk script
+      run: |
         source $HOME/.cargo/env
-        export NDK=/home/runner/android-ndk-${{ env.NDK_VERSION }}
-        export NDK_HOME=/home/runner/android-ndk-${{ env.NDK_VERSION }}
         cd $GITHUB_WORKSPACE
-        python3 build.py -v native  # 这里改为 'native'
+        # 使用 Magisk 的 build.py 来设置 NDK
+        python3 build.py -v ndk
+
+    - name: Build Magisk native binaries
+      run: |
+        source $HOME/.cargo/env
+        cd $GITHUB_WORKSPACE
+        # 现在使用 Magisk 管理的 NDK 来构建原生二进制文件
+        python3 build.py -v native
 
     - name: List output files
       run: |

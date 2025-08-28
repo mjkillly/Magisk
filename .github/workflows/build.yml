@@ -6,7 +6,7 @@ on:
     branches: [ main, master ]
 
 env:
-  NDK_VERSION: r25c
+  NDK_VERSION: r26b  # 更新到较新的 NDK 版本
 
 jobs:
   build:
@@ -14,7 +14,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v4  # 使用最新版本的 checkout
 
     - name: Find configuration files
       run: |
@@ -23,18 +23,16 @@ jobs:
         git grep -l "STUB_APK" || echo "No STUB_APK found"
         git grep -l "stub.apk" || echo "No stub.apk found"
 
-    - name: Modify configuration (示例，需要根据实际文件调整)
+    - name: Modify configuration
       run: |
         # 尝试修改可能的配置文件
-        # 请根据上一步找到的实际文件路径修改这些命令
-        
-        # 如果找到了包含 STUB_APK 的文件
+        # 首先检查并修改 native/src/core/config.hpp
         if [ -f "native/src/core/config.hpp" ]; then
           echo "Modifying native/src/core/config.hpp"
           sed -i 's/^#define STUB_APK_RAW .*/#define STUB_APK_RAW ""/' native/src/core/config.hpp
         fi
         
-        # 或者如果配置在 scripts/config.sh 中
+        # 检查并修改 scripts/config.sh
         if [ -f "scripts/config.sh" ]; then
           echo "Modifying scripts/config.sh"
           sed -i 's/^STUB_APK=.*/STUB_APK=""/' scripts/config.sh
@@ -60,22 +58,34 @@ jobs:
         wget https://dl.google.com/android/repository/android-ndk-${{ env.NDK_VERSION }}-linux.zip
         unzip android-ndk-${{ env.NDK_VERSION }}-linux.zip -d /home/runner/
         echo "NDK_HOME=/home/runner/android-ndk-${{ env.NDK_VERSION }}" >> $GITHUB_ENV
+        echo "NDK=/home/runner/android-ndk-${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
     - name: Set up Rust
       run: |
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        source $HOME/.cargo/env
+        rustc --version
 
     - name: Build Magisk binaries
       run: |
         source $HOME/.cargo/env
+        export NDK=/home/runner/android-ndk-${{ env.NDK_VERSION }}
         export NDK_HOME=/home/runner/android-ndk-${{ env.NDK_VERSION }}
         cd $GITHUB_WORKSPACE
         python3 build.py -v binary
 
+    - name: List output files
+      run: |
+        find $GITHUB_WORKSPACE/out -type f -name "magisk*" | xargs ls -la
+
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4  # 更新到 v4 版本
       with:
         name: magisk-binaries
-        path: out/
+        path: |
+          out/**/magisk
+          out/**/magiskinit
+          out/**/magiskboot
+          out/**/magiskpolicy
         if-no-files-found: error

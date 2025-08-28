@@ -10,8 +10,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
+    - name: Checkout repository with submodules
       uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+        fetch-depth: 0
 
     - name: Find configuration files
       run: |
@@ -68,12 +71,16 @@ jobs:
       run: |
         source $HOME/.cargo/env
         cd $GITHUB_WORKSPACE
-        # 现在使用 Magisk 管理的 NDK 来构建原生二进制文件
+        # 使用 Magisk 管理的 NDK 来构建原生二进制文件
         python3 build.py -v native
 
     - name: List output files
       run: |
+        echo "Build output files:"
         find $GITHUB_WORKSPACE/out -type f -name "magisk*" | xargs ls -la
+        echo ""
+        echo "Directory structure:"
+        find $GITHUB_WORKSPACE/out -type f | sort
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
@@ -85,3 +92,24 @@ jobs:
           out/**/magiskboot
           out/**/magiskpolicy
         if-no-files-found: error
+
+    - name: Create compressed archive
+      run: |
+        cd $GITHUB_WORKSPACE/out
+        # 为每个架构创建单独的压缩包
+        for arch in *; do
+          if [ -d "$arch" ]; then
+            echo "Creating archive for $arch"
+            tar -czf "../magisk-$arch-$(date +%Y%m%d).tar.gz" "$arch"/
+          fi
+        done
+        # 创建包含所有架构的压缩包
+        tar -czf "../magisk-all-arch-$(date +%Y%m%d).tar.gz" ./*/
+
+    - name: Upload compressed archives
+      uses: actions/upload-artifact@v4
+      with:
+        name: magisk-archives
+        path: |
+          ${{ github.workspace }}/magisk-*.tar.gz
+        if-no-files-found: ignore

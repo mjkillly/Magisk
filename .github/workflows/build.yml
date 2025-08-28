@@ -74,42 +74,42 @@ jobs:
         # 使用 Magisk 管理的 NDK 来构建原生二进制文件
         python3 build.py -v native
 
-    - name: List output files
+    - name: Debug - List all files in out directory
       run: |
-        echo "Build output files:"
-        find $GITHUB_WORKSPACE/out -type f -name "magisk*" | xargs ls -la
+        echo "Listing all files in out directory:"
+        find $GITHUB_WORKSPACE/out -type f 2>/dev/null | sort || echo "out directory does not exist or is empty"
+        
         echo ""
-        echo "Directory structure:"
-        find $GITHUB_WORKSPACE/out -type f | sort
+        echo "Searching for magisk-related files anywhere:"
+        find $GITHUB_WORKSPACE -name "*magisk*" -type f 2>/dev/null | sort || echo "No magisk files found"
 
-    - name: Upload build artifacts
+    - name: Upload build artifacts (flexible)
+      if: success() || failure()  # 即使构建失败也尝试上传
       uses: actions/upload-artifact@v4
       with:
-        name: magisk-binaries
+        name: magisk-build-output
         path: |
-          out/**/magisk
-          out/**/magiskinit
-          out/**/magiskboot
-          out/**/magiskpolicy
-        if-no-files-found: error
-
-    - name: Create compressed archive
-      run: |
-        cd $GITHUB_WORKSPACE/out
-        # 为每个架构创建单独的压缩包
-        for arch in *; do
-          if [ -d "$arch" ]; then
-            echo "Creating archive for $arch"
-            tar -czf "../magisk-$arch-$(date +%Y%m%d).tar.gz" "$arch"/
-          fi
-        done
-        # 创建包含所有架构的压缩包
-        tar -czf "../magisk-all-arch-$(date +%Y%m%d).tar.gz" ./*/
-
-    - name: Upload compressed archives
-      uses: actions/upload-artifact@v4
-      with:
-        name: magisk-archives
-        path: |
-          ${{ github.workspace }}/magisk-*.tar.gz
+          ${{ github.workspace }}/out/**
+          ${{ github.workspace }}/build.log
         if-no-files-found: ignore
+        retention-days: 1
+
+    - name: Create and upload build log
+      run: |
+        # 创建构建日志
+        echo "Build process completed at $(date)" > $GITHUB_WORKSPACE/build.log
+        echo "GitHub Workspace: $GITHUB_WORKSPACE" >> $GITHUB_WORKSPACE/build.log
+        echo "" >> $GITHUB_WORKSPACE/build.log
+        echo "Directory structure:" >> $GITHUB_WORKSPACE/build.log
+        ls -la $GITHUB_WORKSPACE/ >> $GITHUB_WORKSPACE/build.log 2>&1 || echo "Cannot list workspace" >> $GITHUB_WORKSPACE/build.log
+        echo "" >> $GITHUB_WORKSPACE/build.log
+        echo "Out directory contents:" >> $GITHUB_WORKSPACE/build.log
+        ls -la $GITHUB_WORKSPACE/out/ >> $GITHUB_WORKSPACE/build.log 2>&1 || echo "Out directory does not exist" >> $GITHUB_WORKSPACE/build.log
+
+    - name: Upload build log
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: ${{ github.workspace }}/build.log
+        if-no-files-found: ignore
+        retention-days: 7

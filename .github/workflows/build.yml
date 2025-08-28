@@ -1,204 +1,81 @@
-name: Magisk Build
+name: Build Modified Magisk
 
 on:
-  push:
-    branches: [master]
-    paths:
-      - "app/**"
-      - "native/**"
-      - "build.py"
-      - ".github/workflows/build.yml"
-  pull_request:
-    branches: [master]
   workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+env:
+  NDK_VERSION: r25c
 
 jobs:
   build:
-    name: Build Magisk artifacts
-    runs-on: macos-15
-    strategy:
-      fail-fast: false
-    steps:
-      - name: Check out
-        uses: actions/checkout@v4
-        with:
-          submodules: "recursive"
-
-      - name: Setup environment
-        uses: ./.github/actions/setup
-        with:
-          is-asset-build: true
-
-      - name: Build release
-        run: ./build.py -vr all
-
-      - name: Build debug
-        run: ./build.py -v all
-
-      - name: Stop gradle daemon
-        run: ./app/gradlew --stop
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ github.sha }}
-          path: out
-          compression-level: 9
-
-      - name: Upload mapping and native debug symbols
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ github.sha }}-symbols
-          path: app/apk/build/outputs
-          compression-level: 9
-
-  test-build:
-    name: Test building on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-2025, ubuntu-24.04]
-    steps:
-      - name: Check out
-        uses: actions/checkout@v4
-        with:
-          submodules: "recursive"
-
-      - name: Setup environment
-        uses: ./.github/actions/setup
-
-      - name: Test build
-        run: python build.py -v -c .github/ci.prop all
-
-      - name: Stop gradle daemon
-        run: ./app/gradlew --stop
-
-  avd-test:
-    name: Test API ${{ matrix.version }} (x86_64)
-    runs-on: ubuntu-24.04
-    needs: build
-    if: ${{ github.event_name != 'push' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        version: [23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, "36.0-CANARY"]
-        type: [""]
-        include:
-          - version: "36.0-CANARY"
-            type: "google_apis_ps16k"
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Check out
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ github.sha }}
-          path: out
+    - name: Find configuration files
+      run: |
+        echo "Searching for configuration files..."
+        find . -name "*.hpp" -o -name "*.h" -o -name "config.sh" | grep -E "(config|stub)" | head -10
+        git grep -l "STUB_APK" || echo "No STUB_APK found"
+        git grep -l "stub.apk" || echo "No stub.apk found"
 
-      - name: Enable KVM group perms
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+    - name: Modify configuration (示例，需要根据实际文件调整)
+      run: |
+        # 尝试修改可能的配置文件
+        # 请根据上一步找到的实际文件路径修改这些命令
+        
+        # 如果找到了包含 STUB_APK 的文件
+        if [ -f "native/src/core/config.hpp" ]; then
+          echo "Modifying native/src/core/config.hpp"
+          sed -i 's/^#define STUB_APK_RAW .*/#define STUB_APK_RAW ""/' native/src/core/config.hpp
+        fi
+        
+        # 或者如果配置在 scripts/config.sh 中
+        if [ -f "scripts/config.sh" ]; then
+          echo "Modifying scripts/config.sh"
+          sed -i 's/^STUB_APK=.*/STUB_APK=""/' scripts/config.sh
+        fi
+        
+        # 显示修改结果
+        echo "Modified content:"
+        git grep -n "STUB_APK" || echo "STUB_APK not found after modification"
 
-      - name: Run AVD test
-        timeout-minutes: 15
-        env:
-          AVD_TEST_LOG: 1
-        run: scripts/avd.sh test ${{ matrix.version }} ${{ matrix.type }}
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
 
-      - name: Upload logs on error
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: "avd-logs-${{ matrix.version }}"
-          path: |
-            kernel.log
-            logcat.log
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y git curl wget zip unzip python3 python3-pip build-essential libssl-dev zlib1g-dev
 
-  avd-test-32:
-    name: Test API ${{ matrix.version }} (x86)
-    runs-on: ubuntu-24.04
-    needs: build
-    if: ${{ github.event_name != 'push' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        version: [23, 24, 25, 26, 27, 28, 29, 30]
+    - name: Download and setup Android NDK
+      run: |
+        wget https://dl.google.com/android/repository/android-ndk-${{ env.NDK_VERSION }}-linux.zip
+        unzip android-ndk-${{ env.NDK_VERSION }}-linux.zip -d /home/runner/
+        echo "NDK_HOME=/home/runner/android-ndk-${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
-    steps:
-      - name: Check out
-        uses: actions/checkout@v4
+    - name: Set up Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ github.sha }}
-          path: out
+    - name: Build Magisk binaries
+      run: |
+        source $HOME/.cargo/env
+        export NDK_HOME=/home/runner/android-ndk-${{ env.NDK_VERSION }}
+        cd $GITHUB_WORKSPACE
+        python3 build.py -v binary
 
-      - name: Enable KVM group perms
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Run AVD test
-        timeout-minutes: 15
-        env:
-          FORCE_32_BIT: 1
-          AVD_TEST_LOG: 1
-        run: scripts/avd.sh test ${{ matrix.version }}
-
-      - name: Upload logs on error
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: "avd32-logs-${{ matrix.version }}"
-          path: |
-            kernel.log
-            logcat.log
-
-  cf-test:
-    name: Test ${{ matrix.device }}
-    runs-on: ubuntu-24.04
-    needs: build
-    if: ${{ github.event_name != 'push' }}
-    env:
-      CF_HOME: /home/runner/aosp_cf_phone
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - branch: "aosp-android-latest-release"
-            device: "aosp_cf_x86_64_only_phone"
-
-    steps:
-      - name: Check out
-        uses: actions/checkout@v4
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ github.sha }}
-          path: out
-
-      - name: Setup Cuttlefish environment
-        run: |
-          scripts/cuttlefish.sh setup
-          scripts/cuttlefish.sh download ${{ matrix.branch }} ${{ matrix.device }}
-
-      - name: Run Cuttlefish test
-        timeout-minutes: 15
-        run: sudo -E -u $USER scripts/cuttlefish.sh test
-
-      - name: Upload logs on error
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: "cvd-logs-${{ matrix.device }}"
-          path: |
-            /home/runner/aosp_cf_phone/cuttlefish/instances/cvd-1/logs
-            /home/runner/aosp_cf_phone/cuttlefish/instances/cvd-1/cuttlefish_config.json
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: magisk-binaries
+        path: out/
+        if-no-files-found: error

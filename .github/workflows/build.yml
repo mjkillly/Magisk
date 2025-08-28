@@ -6,7 +6,7 @@ on:
     branches: [ main, master ]
 
 env:
-  NDK_VERSION: r26b  # 更新到较新的 NDK 版本
+  NDK_VERSION: r26b
 
 jobs:
   build:
@@ -14,7 +14,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4  # 使用最新版本的 checkout
+      uses: actions/checkout@v4
 
     - name: Find configuration files
       run: |
@@ -67,20 +67,20 @@ jobs:
         source $HOME/.cargo/env
         rustc --version
 
-    - name: Build Magisk binaries
-      run: |
+    - name: Build Magisk native binaries
+      run: |  # 修改这里：使用 'native' 而不是 'binary'
         source $HOME/.cargo/env
         export NDK=/home/runner/android-ndk-${{ env.NDK_VERSION }}
         export NDK_HOME=/home/runner/android-ndk-${{ env.NDK_VERSION }}
         cd $GITHUB_WORKSPACE
-        python3 build.py -v binary
+        python3 build.py -v native  # 这里改为 'native'
 
     - name: List output files
       run: |
         find $GITHUB_WORKSPACE/out -type f -name "magisk*" | xargs ls -la
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v4  # 更新到 v4 版本
+      uses: actions/upload-artifact@v4
       with:
         name: magisk-binaries
         path: |
